@@ -1,0 +1,15 @@
+# Core requirements (always needed)
+numpy>=1.24
+requests>=2.28
+
+# Optional: For static rendering without fVDB viewer
+# matplotlib>=3.7
+
+# fVDB and PyTorch must be installed separately following fVDB installation instructions:
+# https://github.com/openvdb/fvdb-core
+#
+# Typical installation:
+#   conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia
+#   pip install fvdb
+#
+# Or build from source for the latest features.

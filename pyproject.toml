@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fvdb-client"
+version = "0.1.0"
+description = "Fetch label topology from DVID and create fVDB IndexGrids"
+readme = "README.md"
+license = {text = "BSD-3-Clause"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Janelia FlyEM", email = "flyem@janelia.hhmi.org"}
+]
+keywords = ["dvid", "fvdb", "nanovdb", "connectomics", "visualization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+fvdb = [
+    "torch>=2.0",
+    # fvdb must be installed separately following fvdb-core instructions
+]
+render = [
+    "matplotlib>=3.7",
+]
+all = [
+    "torch>=2.0",
+    "matplotlib>=3.7",
+]
+
+[project.scripts]
+fvdb-client = "fvdb_client.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/janelia-flyem/dvid"
+Repository = "https://github.com/janelia-flyem/dvid"
+Documentation = "https://github.com/janelia-flyem/dvid/tree/master/fvdb-client"
+
+[tool.setuptools.packages.find]
+include = ["fvdb_client*"]
