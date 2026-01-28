@@ -37,8 +37,9 @@ pip install fvdb
 ### 2. Install fvdb-client
 
 ```bash
-# Clone or copy the fvdb-client directory
-cd fvdb-client
+# Clone the repository
+git clone <repo-url> fvdb-dvid
+cd fvdb-dvid
 
 # Install in development mode
 pip install -e .
