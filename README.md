@@ -1,4 +1,4 @@
-# fVDB Client
+# fvdb-dvid
 
 A Python tool to fetch label topology from [DVID](https://github.com/janelia-flyem/dvid) servers and create [fVDB](https://github.com/openvdb/fvdb-core) IndexGrids for efficient sparse voxel representation and visualization.
 
@@ -6,53 +6,96 @@ A Python tool to fetch label topology from [DVID](https://github.com/janelia-fly
 
 - **Fetch label data from DVID**: Connect to any DVID server and download label voxel topology
 - **Create IndexGrids**: Convert label topology to fVDB's efficient sparse representation
+- **Load existing .nvdb files**: Work with previously saved IndexGrids without DVID access
 - **Statistics reporting**: Understand voxel counts, bounding boxes, and storage costs
-- **Interactive 3D visualization**: View labels using fVDB's web-based viewer with trackball rotation
-- **Static rendering**: Generate images for documentation or animation
+- **Interactive 3D visualization**: Web-based viewer with trackball rotation (remote-accessible)
+- **Static rendering**: Generate images via matplotlib (no GPU display required)
 
 ## Requirements
 
-- Python 3.10+
-- Linux with NVIDIA GPU (for visualization and GPU-accelerated operations)
-- [fVDB](https://github.com/openvdb/fvdb-core) with PyTorch and CUDA support
+- Linux with NVIDIA GPU (Ampere or newer, compute capability 8.0+)
+- NVIDIA driver 550.0 or later
+- Python 3.10-3.13
+- Vulkan (for interactive viewer only)
 
 ## Installation
 
-### 1. Install fVDB (required for full functionality)
-
-Follow the [fVDB installation instructions](https://github.com/openvdb/fvdb-core). Typically:
+### 1. Create conda environment
 
 ```bash
-# Create conda environment
 conda create -n fvdb python=3.12
 conda activate fvdb
-
-# Install PyTorch with CUDA
-conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia
-
-# Install fVDB
-pip install fvdb
 ```
 
-### 2. Install fvdb-client
+### 2. Install fVDB and PyTorch
+
+**Important:** The PyPI package `fvdb` is an unrelated project. The correct package is `fvdb-core` from NVIDIA's package index.
 
 ```bash
-# Clone the repository
+pip install fvdb-core torch==2.8.0 \
+  --extra-index-url="https://d36m13axqqhiit.cloudfront.net/simple" \
+  --extra-index-url="https://download.pytorch.org/whl/cu128"
+```
+
+Verify:
+
+```bash
+python -c "import fvdb; import torch; print('PyTorch:', torch.__version__, 'CUDA:', torch.cuda.is_available())"
+# Expected: PyTorch: 2.8.0+cu128 CUDA: True
+```
+
+### 3. Install nanovdb-editor (required for interactive viewer)
+
+The interactive 3D viewer depends on [nanovdb-editor](https://github.com/openvdb/nanovdb-editor), which must be built from source. This requires Vulkan and a C++ toolchain.
+
+```bash
+git clone https://github.com/openvdb/nanovdb-editor.git
+cd nanovdb-editor
+./build.sh -p
+```
+
+If you only need statistics and static rendering, this step can be skipped.
+
+### 4. Install fvdb-dvid
+
+```bash
 git clone <repo-url> fvdb-dvid
 cd fvdb-dvid
-
-# Install in development mode
 pip install -e .
-
-# Or install dependencies only
-pip install -r requirements.txt
 ```
 
 ## Usage
 
-### Quick Info (no download)
+### Working with existing .nvdb files
 
-Get information about a label without downloading the full data:
+```bash
+# View statistics
+fvdb-client stats label_12345.nvdb
+
+# Interactive 3D visualization (requires nanovdb-editor)
+fvdb-client view label_12345.nvdb
+
+# Render to image (requires matplotlib, no Vulkan needed)
+fvdb-client render label_12345.nvdb --output render.png
+```
+
+### Remote viewing
+
+The interactive viewer serves a web UI that can be accessed remotely via SSH port forwarding:
+
+```bash
+# On the cluster:
+fvdb-client view label.nvdb --ip 0.0.0.0 --port 8080 --no-browser
+
+# From your local machine:
+ssh -L 8080:localhost:8080 user@cluster
+
+# Then open http://localhost:8080 in your local browser
+```
+
+### Fetching from DVID
+
+Get information about a label (no download):
 
 ```bash
 fvdb-client info \
@@ -61,8 +104,6 @@ fvdb-client info \
     --instance segmentation \
     --label 12345
 ```
-
-### Fetch and Create IndexGrid
 
 Download label topology and save as NanoVDB file:
 
@@ -81,89 +122,50 @@ Options:
 - `--compress`: Use Blosc compression for smaller files
 - `--device cuda|cpu`: Device for grid building
 
-### View Statistics
+### Visualization options
 
-Analyze a saved IndexGrid:
-
+Interactive viewer (requires nanovdb-editor + Vulkan):
 ```bash
-fvdb-client stats label_12345.nvdb --label 12345
+fvdb-client view label.nvdb --port 8080 --color 0.2,0.6,1.0 --point-size 3.0
 ```
 
-Output includes:
-- Voxel counts
-- Bounding box dimensions
-- Fill ratio
-- Storage size
-- Comparison to alternative formats (dense, RLE, coordinate list)
-
-### Interactive 3D Visualization
-
-View the label topology with mouse-controllable rotation:
-
-```bash
-fvdb-client view label_12345.nvdb
-```
-
-This starts a web-based viewer at `http://127.0.0.1:8080` with:
-- Trackball rotation (click and drag)
-- Zoom (scroll)
-- Pan (shift + drag)
-
-Options:
-- `--port N`: Use different port
-- `--color R,G,B`: Set voxel color (0-1 range)
-- `--point-size N`: Set point size in pixels
-
-### Static Rendering
-
-Render to an image file (requires matplotlib):
-
+Static rendering (requires matplotlib only):
 ```bash
 # Single image
-fvdb-client render label_12345.nvdb --output render.png
+fvdb-client render label.nvdb --output render.png
 
 # Rotation animation frames
-fvdb-client render label_12345.nvdb --output frames/ --rotate --frames 72
-```
+fvdb-client render label.nvdb --output frames/ --rotate --frames 72
 
-Create a GIF from frames:
-```bash
+# Create GIF from frames
 convert -delay 10 -loop 0 frames/frame_*.png animation.gif
 ```
 
 ## Python API
 
-Use as a library in your own scripts:
-
 ```python
-from fvdb_client import DVIDClient, IndexGridBuilder, compute_stats, print_stats
+from fvdb_client import DVIDClient, IndexGridBuilder, save_indexgrid, load_indexgrid
 
-# Connect to DVID
+# Load existing .nvdb file
+grid = load_indexgrid("label_12345.nvdb", device="cuda")
+
+# Or fetch from DVID and build
 client = DVIDClient(
     server="http://dvid.example.org:8000",
     uuid="abc123",
     instance="segmentation"
 )
 
-# Get label info
 info = client.get_label_info(12345)
 print(f"Label has {info.voxel_count:,} voxels")
 
-# Build IndexGrid
 builder = IndexGridBuilder(name="label_12345")
 builder.add_coords_from_rles(client.get_sparsevol_rles(12345))
 grid = builder.build()
 
-# Save to file
-from fvdb_client import save_indexgrid
 save_indexgrid(grid, "label_12345.nvdb")
 
-# Compute and print statistics
-from fvdb_client.stats import compute_stats_from_grid
-stats = compute_stats_from_grid(grid, "label_12345.nvdb")
-print_stats(stats, label=12345)
-
-# Visualize
+# Visualize (requires nanovdb-editor)
 from fvdb_client.visualize import visualize_grid
 visualize_grid(grid, name="Label 12345")
 ```
@@ -172,8 +174,8 @@ visualize_grid(grid, name="Label 12345")
 
 ### NanoVDB (.nvdb)
 
-The output files use the [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/feature/nanovdb) format, which is:
-- A compact, GPU-friendly sparse voxel format
+Output files use [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/feature/nanovdb) format:
+- Compact, GPU-friendly sparse voxel format
 - Compatible with OpenVDB ecosystem
 - Loadable by fVDB, NanoVDB viewers, and other OpenVDB tools
 
@@ -181,45 +183,39 @@ The output files use the [NanoVDB](https://github.com/AcademySoftwareFoundation/
 
 This tool uses DVID's `/sparsevol/<label>` endpoint with streaming RLEs format for efficient data transfer.
 
-## Storage Cost Analysis
-
-IndexGrids provide excellent compression for sparse label data:
-
-| Format | Storage for 1M voxels (typical) |
-|--------|--------------------------------|
-| Dense 3D bitmap | ~125 MB (1000³ bounding box) |
-| Coordinate list | ~12 MB (3 × int32 per voxel) |
-| RLE worst case | ~16 MB (4 × int32 per span) |
-| IndexGrid | ~1-5 MB (depends on structure) |
-
-The actual compression depends on the spatial structure of the label. Compact, contiguous labels compress better than scattered ones.
-
 ## Troubleshooting
 
-### fVDB not found
+### Wrong fvdb package installed
 
+If you see errors about MPNet or HuggingFace when importing fvdb:
+```bash
+pip uninstall fvdb
 ```
-ImportError: fVDB is not installed
-```
-
-Install fVDB following the instructions at https://github.com/openvdb/fvdb-core
+You installed the wrong package. Install `fvdb-core` from NVIDIA's index as shown above.
 
 ### CUDA not available
 
-The tool will fall back to CPU if CUDA is not available, but visualization features require GPU support.
+Check that:
+1. NVIDIA driver is installed: `nvidia-smi`
+2. PyTorch has CUDA: `python -c "import torch; print(torch.version.cuda)"`
 
-### Viewer not loading
+If `torch.version.cuda` is `None`, reinstall PyTorch with CUDA support.
 
-- Check that Vulkan drivers are installed
-- Try a different port: `--port 8081`
-- Check firewall settings if accessing remotely
+### Viewer fails with "No module named 'nanovdb_editor'"
+
+Build and install [nanovdb-editor](https://github.com/openvdb/nanovdb-editor) from source (see installation step 3).
+
+### Viewer fails with Vulkan error
+
+The interactive viewer requires Vulkan. Check with `vulkaninfo`. If Vulkan is unavailable, use `fvdb-client render` for static images instead.
 
 ## License
 
-BSD-3-Clause (same as DVID)
+BSD-3-Clause
 
 ## See Also
 
 - [DVID](https://github.com/janelia-flyem/dvid) - Distributed, Versioned, Image-oriented Dataservice
 - [fVDB](https://github.com/openvdb/fvdb-core) - GPU-accelerated sparse voxel operations
-- [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/feature/nanovdb) - Compact VDB format
+- [fVDB Installation Docs](https://fvdb.ai/installation.html) - Official fVDB installation guide
+- [nanovdb-editor](https://github.com/openvdb/nanovdb-editor) - NanoVDB viewer (required for interactive visualization)
