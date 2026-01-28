@@ -17,27 +17,34 @@ grid, data, names = fvdb.GridBatch.from_nanovdb(path, device="cpu")
 
 print(f"Grid names: {names}")
 print(f"Grids in batch: {grid.grid_count}")
-print(f"Total active voxels: {grid.total_voxels:,}")
 
-if data is not None:
+total_voxels = grid.total_voxels
+print(f"Total active voxels: {total_voxels:,}")
+
+if data is not None and data.jdata.numel() > 0:
     print(f"Voxel data shape: {data.jdata.shape}")
 else:
-    print("Voxel data: None")
+    print("Voxel data: None (IndexGrid - topology only)")
 
-if grid.total_voxels == 0:
+if total_voxels == 0:
     print("\nWARNING: Grid has 0 active voxels.")
     print("The NanoVDB container is valid but the topology is empty.")
     print("The Go exporter may not be writing active voxel masks correctly.")
-    sys.exit(1)
+    os._exit(1)
 
-ijk = grid.ijk
-coords = ijk.jdata
+# Get bounding box from grid properties (avoids materializing coordinates)
+try:
+    bbox = grid.bbox_at(0)  # Shape [2, 3] - [[min_i, min_j, min_k], [max_i, max_j, max_k]]
+    bbox_min = bbox[0]
+    bbox_max = bbox[1]
+    extent = bbox_max - bbox_min + 1
 
-mins = coords.min(dim=0).values
-maxs = coords.max(dim=0).values
-extent = maxs - mins + 1
+    print(f"Bounding box min: ({bbox_min[0].item()}, {bbox_min[1].item()}, {bbox_min[2].item()})")
+    print(f"Bounding box max: ({bbox_max[0].item()}, {bbox_max[1].item()}, {bbox_max[2].item()})")
+    print(f"Extent: {extent[0].item()} x {extent[1].item()} x {extent[2].item()}")
+    print(f"Fill ratio: {total_voxels / extent.prod().item():.6f}")
+except Exception as e:
+    print(f"Could not get bounding box: {e}")
 
-print(f"Bounding box min: ({mins[0]}, {mins[1]}, {mins[2]})")
-print(f"Bounding box max: ({maxs[0]}, {maxs[1]}, {maxs[2]})")
-print(f"Extent: {extent[0]} x {extent[1]} x {extent[2]}")
-print(f"Fill ratio: {grid.total_voxels / extent.prod().item():.6f}")
+print("\nVerification complete.")
+os._exit(0)
